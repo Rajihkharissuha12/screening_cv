@@ -29,6 +29,8 @@ exports.handleScreeningCV = async (req, res) => {
     take: 15, // Consider making 'take' dynamic or configurable
   });
 
+  let ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
   for (const file of files) {
     try {
       const response = await axios.get(file.url_cv, {
@@ -36,8 +38,6 @@ exports.handleScreeningCV = async (req, res) => {
       });
 
       const data = await pdf(response.data);
-
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
       // --- Dynamically build filter instructions ---
       let filterCondition = "";
@@ -84,7 +84,7 @@ exports.handleScreeningCV = async (req, res) => {
       `; // Removed the last
 
       const geminiResponse = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-2.0-flash-lite",
         contents: prompt,
       });
 
@@ -112,25 +112,19 @@ exports.handleScreeningCV = async (req, res) => {
           message: `Success Processed CV ${file.nama_file}`,
           data: template, // Optionally include extracted data
         });
+      } else {
+        await prisma.screeningcv.update({
+          data: {
+            status: "processed",
+          },
+          where: {
+            id: file.id,
+          },
+        });
+        results.push({
+          message: `CV ${file.nama_file} filtered out by AI criteria.`,
+        });
       }
-      // else {
-      //   await prisma.screeningcv.update({
-      //     data: {
-      //       status: "filtered_out",
-      //       response: {
-      //         info: `Filtered by AI. Criteria: Exp >= ${
-      //           minExperienceRequired || "N/A"
-      //         }, Domicile = ${desiredDomicile || "N/A"}`,
-      //       },
-      //     },
-      //     where: {
-      //       id: file.id,
-      //     },
-      //   });
-      //   results.push({
-      //     message: `CV ${file.nama_file} filtered out by AI criteria.`,
-      //   });
-      // }
       // --- End Update DB ---
     } catch (err) {
       console.error(`Error processing file ${file.nama_file}:`, err); // Log specific error
@@ -140,17 +134,17 @@ exports.handleScreeningCV = async (req, res) => {
       //   error: `Gagal proses file: ${errorFileName}`,
       //   details: err.message || "An unexpected error occurred",
       // });
-      // try {
-      //   await prisma.screeningcv.update({
-      //     data: { status: "error" },
-      //     where: { id: file.id },
-      //   });
-      // } catch (dbError) {
-      //   console.error(
-      //     `Failed to update status to error for file ID ${file.id}:`,
-      //     dbError
-      //   );
-      // }
+      try {
+        await prisma.screeningcv.update({
+          data: { status: "error" },
+          where: { id: file.id },
+        });
+      } catch (dbError) {
+        console.error(
+          `Failed to update status to error for file ID ${file.id}:`,
+          dbError
+        );
+      }
     }
   }
 
