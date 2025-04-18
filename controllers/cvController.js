@@ -2,6 +2,8 @@ const cloudinary = require("cloudinary").v2;
 const { PrismaClient } = require("@prisma/client");
 const streanUpload = require("../utils/streanUpload");
 const { GoogleGenAI } = require("@google/genai");
+const pdf = require("pdf-parse");
+const { default: axios } = require("axios");
 
 const prisma = new PrismaClient();
 
@@ -14,86 +16,151 @@ cloudinary.config({
 exports.handleScreeningCV = async (req, res) => {
   const results = [];
 
+  // --- Get filter values from request (Example using req.query) ---
+  // Adjust req.query to req.body if needed based on how you send data
+  const minExperienceRequired = req.query.minExperience || null; // e.g., "1 Tahun 0 Bulan" or null/undefined
+  const desiredDomicile = req.query.domicile || null; // e.g., "Jakarta" or null/undefined
+  // --- End Get filter values ---
+
   const files = await prisma.screeningcv.findMany({
     where: {
       status: "uploaded",
     },
-    take: 15,
+    take: 15, // Consider making 'take' dynamic or configurable
   });
+
   for (const file of files) {
     try {
+      const response = await axios.get(file.url_cv, {
+        responseType: "arraybuffer", // Important: Get data as a buffer
+      });
+
+      const data = await pdf(response.data);
+
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-      // const prompt = `
-      // Berikut isi CV:\n${uploadResult.secure_url}\n\n
-      // Required : \n\n
-      // - jika umur > 30 tahun maka tidak perlu di proses dan tidak boleh di tampilkan\n\n
-      // - Response yang di tampilkan cukup hanya Pelamar dengan umur di bawah 30 tahun\n\n
-      // - Respone yang di berikan cukup ketentuan yang di inginkan di bawah !!!\n\n
-      // - Tidak perlu penjelasan atau di berikan penjelasan detail perhitungan\n\n
-      // - Jika hasil Response masih menampilkan data dengan umur > 30 tahun maka hapus dan sisakan data hasil umur kurang dari 30 tahun\n\n
-      // Dari teks-teks CV berikut, untuk setiap kandidat, tolong identifikasi dan sebutkan:\n\n
-      // - Nama lengkap : (contoh : nama lengkap)\n\n
-      // - Perkiraan umur : (asumsi mulai bekerja usia 22 dan menambahkan total pengalaman, langsung sebutkan angka !!!)\n\n
-      // - Daftar pengalaman kerja : \n\n
-      //   - (nama kantor || durasi tanggal mulai dan selesai || total berapa lama durasi) // 1\n\n
-      //   - (nama kantor || durasi tanggal mulai dan selesai || total berapa lama durasi) // 2\n\n
-      //   - dan seterusnya\n\n
-      // - Total durasi pengalaman kerja : (contoh 1 Tahun 2 Bulan)\n\n
+      // --- Dynamically build filter instructions ---
+      let filterCondition = "";
 
-      // Format output untuk setiap kandidat dengan jelas tanpa perlu penjelasan panjang lebar, cukup langsung point inti jawaban yang di inginkan sesuai required yang ada.!!!!!
-      // kalo bisa di rapihkan juga untuk hasil response yang di berikan
-      // `;
+      let filterInstructions = "";
+      if (minExperienceRequired && minExperienceRequired !== "0") {
+        filterInstructions += `\n          - Minimum total durasi pengalaman kerja: ${minExperienceRequired} (Hanya tampilkan jika total pengalaman kerja kandidat DI ATAS  ${minExperienceRequired} ATAU SAMA PERSIS)`;
+      }
+      if (desiredDomicile) {
+        filterInstructions += `\n          - Lokasi domisili yang diinginkan: ${desiredDomicile} (Hanya tampilkan jika domisili kandidat SAMA PERSIS)`;
+      }
+
+      if (filterInstructions) {
+        filterCondition = `
+      - Filter hasil berdasarkan kriteria berikut:${filterInstructions}
+      - Jika kandidat TIDAK MEMENUHI SEMUA kriteria aktif di atas, JANGAN tampilkan output APAPUN untuk kandidat tersebut.`;
+      }
+      // --- End Dynamic build ---
+
       const prompt = `
-      Berikut adalah link CV: ${file.url_cv}
-      required:
-      - Respone yang di berikan cukup ketentuan yang di inginkan di bawah!!!
-      - Tidak perlu penjelasan atau di berikan penjelasan detail perhitungan
-      Tugas:
-      - Hanya proses kandidat dengan umur di bawah 30 tahun (jika umur > 30, abaikan).
-      - Untuk setiap kandidat, tampilkan hanya:
-        - Nama lengkap
-        - Perkiraan umur (cara menghitung 22 tahun + total pengalaman)
-        - Daftar pengalaman kerja (format: nama kantor || tanggal mulai - selesai || total durasi)
-        - Total durasi pengalaman kerja
-      - Setiap kadidat tidak perlu penjelasan atau penambahan informasi.
+      Berikut adalah link CV: ${data.text}
 
-      Output hanya berupa list poin-poin di atas, tanpa pendahuluan, penjelasan, atau kalimat pembuka/penutup.
-      `;
+      PERINTAH TEGAS:
+      - JANGAN berikan penjelasan APAPUN.
+      - JANGAN gunakan kalimat pembuka atau penutup.
+      - JANGAN menyertakan perhitungan umur.
+      - Pastikan SEMUA informasi yang diekstrak berasal LANGSUNG dari konten CV yang diberikan di URL. // Added instruction for accuracy
+      - HANYA berikan output sesuai format yang diminta di bawah.${
+        filterCondition /* Inject dynamic filter conditions here */
+      }
+
+      Tugas (HANYA untuk kandidat yang MEMENUHI kriteria aktif):
+      Ekstrak informasi berikut dari CV dan tampilkan HANYA dalam format ini:
+      - Nama lengkap: [Nama Lengkap Kandidat]
+      - Perkiraan umur: [Angka Umur] (Hitung: 22 + total pengalaman kerja dalam tahun)
+      - Lokasi domisili: [Kota/Daerah Domisili]
+      - Daftar pengalaman kerja:
+          - [Nama Kantor] || [Tanggal Mulai - Tanggal Selesai] || [Total Durasi]
+          - [Nama Kantor] || [Tanggal Mulai - Tanggal Selesai] || [Total Durasi]
+          (lanjutkan jika ada)
+      - Total durasi pengalaman kerja: [X Tahun Y Bulan]
+
+      Output HARUS HANYA berupa daftar poin di atas untuk kandidat yang lolos filter. TIDAK ADA TEKS LAIN.
+      `; // Removed the last
+
       const geminiResponse = await ai.models.generateContent({
         model: "gemini-2.0-flash",
         contents: prompt,
       });
-      // console.log(geminiResponse.candidates[0].content.parts[0].text);
+
+      const extractedText =
+        geminiResponse.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
       const template = {
         nama_file: file.nama_file,
         url: file.url_cv,
-        extracted: geminiResponse.candidates[0].content.parts[0].text,
+        extracted: extractedText,
       };
 
-      const files = await prisma.screeningcv.update({
-        data: {
-          status: "processed",
-          response: template,
-        },
-        where: {
-          id: file.id,
-        },
-      });
+      // --- Update DB based on whether AI returned content ---
+      if (template.extracted && template.extracted.trim() !== "") {
+        await prisma.screeningcv.update({
+          data: {
+            status: "processed",
+            response: template,
+          },
+          where: {
+            id: file.id,
+          },
+        });
+        results.push({
+          message: `Success Processed CV ${file.nama_file}`,
+          data: template, // Optionally include extracted data
+        });
+      } else {
+        await prisma.screeningcv.update({
+          data: {
+            status: "filtered_out",
+            response: {
+              info: `Filtered by AI. Criteria: Exp >= ${
+                minExperienceRequired || "N/A"
+              }, Domicile = ${desiredDomicile || "N/A"}`,
+            },
+          },
+          where: {
+            id: file.id,
+          },
+        });
+        results.push({
+          message: `CV ${file.nama_file} filtered out by AI criteria.`,
+        });
+      }
+      // --- End Update DB ---
     } catch (err) {
-      console.log(err);
+      console.error(`Error processing file ${file.nama_file}:`, err); // Log specific error
+      const errorFileName =
+        file && file.nama_file ? file.nama_file : "unknown file";
       results.push({
-        error: `Gagal proses file: ${file.originalname}`,
-        err: err,
+        error: `Gagal proses file: ${errorFileName}`,
+        details: err.message || "An unexpected error occurred",
       });
+      try {
+        await prisma.screeningcv.update({
+          data: { status: "error" },
+          where: { id: file.id },
+        });
+      } catch (dbError) {
+        console.error(
+          `Failed to update status to error for file ID ${file.id}:`,
+          dbError
+        );
+      }
     }
   }
-  const fileall = await prisma.screeningcv.findMany({
-    where: {
-      status: "uploaded",
-    },
+
+  // --- Return consolidated results ---
+  const remainingUploaded = await prisma.screeningcv.count({
+    where: { status: "uploaded" },
   });
+
   return res.json({
-    total: fileall.length,
+    processedResults: results,
+    remainingUploadedCount: remainingUploaded,
   });
+  // --- End Return ---
 };
