@@ -1,5 +1,5 @@
 const cloudinary = require("cloudinary").v2;
-const { PrismaClient } = require("../generated/prisma");
+const { PrismaClient } = require("@prisma/client");
 const streanUpload = require("../utils/streanUpload");
 const { GoogleGenAI } = require("@google/genai");
 const moment = require("moment"); // Add this line to import moment
