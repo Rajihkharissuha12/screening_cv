@@ -16,7 +16,7 @@ exports.handleUploadCV = async (req, res) => {
   const files = req.files;
   const results = [];
 
-  if (req.files && req.files.length > 25) {
+  if (req.files && req.files.length > 15) {
     return res
       .status(400)
       .json({ error: "Maximum 25 files allowed per upload." });
@@ -34,9 +34,13 @@ exports.handleUploadCV = async (req, res) => {
           status: "uploaded",
         },
       });
-      // console.log(geminiResponse.candidates[0].content.parts[0].text);
+
+      const getall = await prisma.screeningcv.count({
+        where: { status: "uploaded", tanggal: moment().format("DD-MM-YYYY") },
+      });
       results.push({
         message: `Success Upload CV ${uploadResult.public_id}`,
+        total: getall,
       });
     } catch (err) {
       console.log(err);

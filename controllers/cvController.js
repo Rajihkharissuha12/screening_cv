@@ -112,44 +112,45 @@ exports.handleScreeningCV = async (req, res) => {
           message: `Success Processed CV ${file.nama_file}`,
           data: template, // Optionally include extracted data
         });
-      } else {
-        await prisma.screeningcv.update({
-          data: {
-            status: "filtered_out",
-            response: {
-              info: `Filtered by AI. Criteria: Exp >= ${
-                minExperienceRequired || "N/A"
-              }, Domicile = ${desiredDomicile || "N/A"}`,
-            },
-          },
-          where: {
-            id: file.id,
-          },
-        });
-        results.push({
-          message: `CV ${file.nama_file} filtered out by AI criteria.`,
-        });
       }
+      // else {
+      //   await prisma.screeningcv.update({
+      //     data: {
+      //       status: "filtered_out",
+      //       response: {
+      //         info: `Filtered by AI. Criteria: Exp >= ${
+      //           minExperienceRequired || "N/A"
+      //         }, Domicile = ${desiredDomicile || "N/A"}`,
+      //       },
+      //     },
+      //     where: {
+      //       id: file.id,
+      //     },
+      //   });
+      //   results.push({
+      //     message: `CV ${file.nama_file} filtered out by AI criteria.`,
+      //   });
+      // }
       // --- End Update DB ---
     } catch (err) {
       console.error(`Error processing file ${file.nama_file}:`, err); // Log specific error
-      const errorFileName =
-        file && file.nama_file ? file.nama_file : "unknown file";
-      results.push({
-        error: `Gagal proses file: ${errorFileName}`,
-        details: err.message || "An unexpected error occurred",
-      });
-      try {
-        await prisma.screeningcv.update({
-          data: { status: "error" },
-          where: { id: file.id },
-        });
-      } catch (dbError) {
-        console.error(
-          `Failed to update status to error for file ID ${file.id}:`,
-          dbError
-        );
-      }
+      // const errorFileName =
+      //   file && file.nama_file ? file.nama_file : "unknown file";
+      // results.push({
+      //   error: `Gagal proses file: ${errorFileName}`,
+      //   details: err.message || "An unexpected error occurred",
+      // });
+      // try {
+      //   await prisma.screeningcv.update({
+      //     data: { status: "error" },
+      //     where: { id: file.id },
+      //   });
+      // } catch (dbError) {
+      //   console.error(
+      //     `Failed to update status to error for file ID ${file.id}:`,
+      //     dbError
+      //   );
+      // }
     }
   }
 
