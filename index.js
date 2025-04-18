@@ -1,10 +1,12 @@
 const express = require("express");
 const app = express();
 require("dotenv").config();
-const router = require("./routes/cvRoutes");
+const ScreeningRoutes = require("./routes/cvRoutes");
+const UploadRoutes = require("./routes/uploadRoutes");
 
 app.use(express.json());
-app.use("/api/cv", router);
+app.use("/api/cv", ScreeningRoutes);
+app.use("/api/cvupload", UploadRoutes);
 
 app.get("/", (req, res) => {
   res.send("API CV Reader aktif");
