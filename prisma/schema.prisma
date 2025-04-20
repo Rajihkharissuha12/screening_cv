@@ -16,7 +16,8 @@ datasource db {
 
 model Screeningcv {
   id    Int     @id @default(autoincrement())
-  tanggal String 
+  tanggal String
+  tanggal_screening String? 
   nama_file String
   public_id String
   url_cv String
@@ -25,3 +26,12 @@ model Screeningcv {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model Prioritycv {
+  id    Int     @id @default(autoincrement())
+  tanggal String
+  response Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
