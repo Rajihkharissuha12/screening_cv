@@ -14,6 +14,7 @@ exports.handleScreeningCV = async (req, res) => {
   // --- Get filter values from request ---
   const minExperienceRequired = req.query.minExperience || null;
   const desiredDomicile = req.query.domicile || null;
+  const khususmbakrere = req.query.khususmbakrere || null;
   // --- End Get filter values ---
 
   const files = await prisma.screeningcv.findMany({
@@ -49,6 +50,11 @@ exports.handleScreeningCV = async (req, res) => {
       }
       if (desiredDomicile) {
         filterInstructions += `\n          - Lokasi domisili yang diinginkan: ${desiredDomicile} (Hanya tampilkan jika domisili kandidat SAMA PERSIS)`;
+      }
+
+      if (khususmbakrere === "true" || khususmbakrere === true) {
+        filterInstructions += `
+          - Untuk setiap pengalaman kerja, hanya masukkan pengalaman yang memiliki durasi MINIMAL 1 tahun atau 12 bulan. Jika durasi kurang dari itu, JANGAN masukkan ke dalam daftar pengalaman.`;
       }
 
       if (filterInstructions) {
