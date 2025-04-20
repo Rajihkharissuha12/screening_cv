@@ -49,7 +49,28 @@ exports.handleScreeningCV = async (req, res) => {
         filterInstructions += `\n          - Minimum total durasi pengalaman kerja: ${minExperienceRequired} (Hanya tampilkan jika total pengalaman kerja kandidat DI ATAS ${minExperienceRequired} ATAU SAMA PERSIS)`;
       }
       if (desiredDomicile) {
-        filterInstructions += `\n          - Lokasi domisili yang diinginkan: ${desiredDomicile} (Hanya tampilkan jika domisili kandidat SAMA PERSIS)`;
+        filterInstructions += `\n          - Lokasi domisili yang diinginkan: ${desiredDomicile}
+          - ATURAN KETAT untuk pengecekan domisili:
+            1. Pengecekan berdasarkan hierarki wilayah administratif:
+               a. Jika input adalah provinsi (contoh: "Bali"):
+                  - TERIMA semua kota/kabupaten dalam provinsi tersebut
+                  - Contoh untuk "Bali": terima "Denpasar", "Badung", "Gianyar", dll
+               b. Jika input adalah kota besar (contoh: "Jakarta"):
+                  - TERIMA kota tersebut dan kota satelitnya
+                  - Contoh untuk "Jakarta": terima "Jakarta Pusat", "Tangerang", "Bekasi", "Depok", "Bogor"
+               c. Jika input adalah kabupaten/kota dalam provinsi (contoh: "Sleman"):
+                  - TERIMA kota/kabupaten tersebut dan area sekitarnya dalam provinsi yang sama
+                  - Contoh untuk "Sleman": terima "Yogyakarta", "Bantul", "Kulon Progo" (area DIY)
+               d. Jika input adalah kota tunggal (contoh: "Jember"):
+                  - TERIMA HANYA kota tersebut
+            2. Periksa variasi penulisan:
+               - "DKI Jakarta" = "Jakarta"
+               - "DI Yogyakarta" = "Yogyakarta"
+               - "Kota Denpasar" = "Denpasar"
+            3. WAJIB mengembalikan JSON kosong {} untuk domisili yang:
+               - Tidak sesuai dengan aturan di atas
+               - Berada di luar area yang ditentukan
+               - Tidak memiliki hubungan administratif dengan lokasi yang diminta`;
       }
 
       if (khususmbakrere === "true" || khususmbakrere === true) {
@@ -60,7 +81,9 @@ exports.handleScreeningCV = async (req, res) => {
       if (filterInstructions) {
         filterCondition = `
       - Filter hasil berdasarkan kriteria berikut:${filterInstructions}
-      - Jika kandidat TIDAK MEMENUHI SEMUA kriteria aktif di atas, JANGAN tampilkan output APAPUN untuk kandidat tersebut (kembalikan JSON kosong {}).`;
+      - PERHATIAN: Jika kandidat TIDAK MEMENUHI SALAH SATU SAJA dari kriteria di atas, WAJIB mengembalikan JSON kosong {}.
+      - Contoh: Jika domisili yang diminta adalah "Bali" dan kandidat berdomisili di "Jakarta", maka HARUS mengembalikan JSON kosong {} WALAUPUN kriteria lainnya terpenuhi.
+      - Setiap kriteria bersifat WAJIB dan MUTLAK. Tidak ada toleransi atau pengecualian.`;
       }
       // --- End Dynamic build ---
 
