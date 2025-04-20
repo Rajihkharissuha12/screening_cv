@@ -4,7 +4,6 @@ const prisma = new PrismaClient();
 // --- Updated function to fetch and MERGE Prioritycv data by date ---
 exports.getScreeningHistory = async (req, res) => {
   const { date } = req.query;
-  console.log(date);
   try {
     // --- Step 1: Fetch all Prioritycv records ---
     const priorityData = await prisma.prioritycv.findMany({
@@ -65,16 +64,35 @@ exports.getScreeningHistory = async (req, res) => {
     }
     // --- End Merging Logic ---
 
-    // --- Step 3: Transform the merged data object into an array ---
+    // --- New Step: Filter processingSummary to remove duplicates from sortedCandidates ---
+    for (const tanggal in mergedPriorityData) {
+      const dateData = mergedPriorityData[tanggal];
+
+      // Create a Set of url_cv values from sortedCandidates for efficient lookup
+      const sortedCandidateUrls = new Set(
+        dateData.sortedCandidates
+          .map((candidate) => candidate.url_cv)
+          .filter((url) => url) // Ensure url exists
+      );
+
+      // Filter processingSummary, keeping only items whose url_cv is NOT in the Set
+      dateData.processingSummary = dateData.processingSummary.filter(
+        (summaryItem) =>
+          !summaryItem.url_cv || !sortedCandidateUrls.has(summaryItem.url_cv)
+      );
+    }
+    // --- End Filtering Step ---
+
+    // --- Step 3 (Renumbered): Transform the merged data object into an array ---
     const result_array = Object.entries(mergedPriorityData).map(
       ([tanggal, data]) => ({
         tanggal_process: tanggal, // The date string
-        data: data, // The merged data object for that date
+        data: data, // The merged and filtered data object for that date
       })
     );
     // --- End Transformation ---
 
-    // --- Step 4: Return the transformed array ---
+    // --- Step 4 (Renumbered): Return the transformed array ---
     return res.json(result_array); // Return the array
   } catch (error) {
     console.error("Error fetching priority CV history:", error); // Updated error message
