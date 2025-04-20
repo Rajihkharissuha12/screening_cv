@@ -11,7 +11,8 @@ const corsOptions = {
   // --- Edit 1: Change origin to an array of allowed origins ---
   origin: [
     "http://localhost:3000", // Keep the existing localhost origin
-    "https://hr-briliant.vercel.app/", // Add the Vercel frontend origin
+    "https://hr-briliant.vercel.app", // Remove trailing slash from Vercel frontend origin
+    "https://screening-cv-nine.vercel.app", // Add backend Vercel origin
   ],
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE", // Wider method coverage
   allowedHeaders: "Content-Type,Authorization,X-Requested-With", // Case-sensitive
