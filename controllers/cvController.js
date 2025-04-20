@@ -50,30 +50,49 @@ exports.handleScreeningCV = async (req, res) => {
       }
       if (desiredDomicile) {
         filterInstructions += `\n          - Lokasi domisili yang diinginkan: ${desiredDomicile}
-          - ATURAN KETAT untuk pengecekan domisili:
-            1. Pengecekan berdasarkan hierarki wilayah administratif:
-               a. Jika input adalah provinsi (contoh: "Bali"):
-                  - TERIMA semua kota/kabupaten dalam provinsi tersebut
-                  - Contoh untuk "Bali": terima "Denpasar", "Badung", "Gianyar", dll
-               b. Jika input adalah kota besar (contoh: "Jakarta"):
-                  - TERIMA kota tersebut dan kota satelitnya
-                  - Contoh untuk "Jakarta": terima "Jakarta Pusat", "Tangerang", "Bekasi", "Depok", "Bogor"
-               c. Jika input adalah kabupaten/kota dalam provinsi (contoh: "Sleman"):
-                  - TERIMA kota/kabupaten tersebut dan area sekitarnya dalam provinsi yang sama
-                  - Contoh untuk "Sleman": terima "Yogyakarta", "Bantul", "Kulon Progo" (area DIY)
-               d. Jika input adalah kota tunggal (contoh: "Jember"):
-                  - TERIMA HANYA kota tersebut
-            2. Periksa variasi penulisan:
-               - "DKI Jakarta" = "Jakarta"
-               - "DI Yogyakarta" = "Yogyakarta"
-               - "Kota Denpasar" = "Denpasar"
-            3. WAJIB mengembalikan JSON kosong {} untuk domisili yang:
-               - Tidak sesuai dengan aturan di atas
-               - Berada di luar area yang ditentukan
-               - Tidak memiliki hubungan administratif dengan lokasi yang diminta
-               - Tidak ada informasi domisili yang jelas dalam CV
-               - Format penulisan domisili tidak standar atau ambigu
-               - Domisili hanya berupa nama jalan tanpa kota/kabupaten yang jelas`;
+          - ATURAN KETAT DOMISILI (WAJIB DIPATUHI):
+            1. KANDIDAT HARUS DITOLAK JIKA:
+               - Domisili tidak disebutkan secara eksplisit dalam CV
+               - Hanya menyebut nama jalan/kecamatan tanpa kota/kabupaten
+               - Menyebut lokasi lebih dari 50km dari area yang diminta
+               - Menggunakan singkatan tidak resmi (e.g., "Jkt" untuk Jakarta)
+               - Hanya menyebut kode pos tanpa nama lokasi
+
+            2. CONTOH PENOLAKAN OTOMATIS:
+               - Filter: "Bali" → CV menyebut "Denpasar" → DITERIMA
+               - Filter: "Bali" → CV menyebut "Bandung" → DITOLAK
+               - Filter: "Jakarta" → CV menyebut "Tangerang Selatan" → DITERIMA
+               - Filter: "Sleman" → CV menyebut "Bantul" → DITERIMA (masih DIY)
+               - Filter: "Surabaya" → CV menyebut "Gresik" → DITOLAK
+
+            3. TINDAKAN PAKSA:
+               - Jika ada keraguan sedikit pun tentang kecocokan domisili → Kembalikan nul
+               - Jika domisili kandidat tidak 100% memenuhi hierarki wilayah → Kembalikan null
+               - Jika terdapat lebih dari 1 domisili dalam CV → Prioritaskan domisili terbaru
+               - Jika domisili tidak konsisten di berbagai bagian CV → Anggap tidak valid`;
+
+        // - ATURAN KETAT untuk pengecekan domisili:
+        //   1. Pengecekan berdasarkan hierarki wilayah administratif:
+        //      a. Jika input adalah provinsi (contoh: "Bali"):
+        //         - TERIMA semua kota/kabupaten dalam provinsi tersebut
+        //         - Contoh untuk "Bali": terima "Denpasar", "Badung", "Gianyar", dll
+        //      b. Jika input adalah kota besar (contoh: "Jakarta"):
+        //         - TERIMA kota tersebut dan kota satelitnya
+        //         - Contoh untuk "Jakarta": terima "Jakarta Pusat", "Tangerang", "Bekasi", "Depok", "Bogor"
+        //      c. Jika input adalah kabupaten/kota dalam provinsi (contoh: "Sleman"):
+        //         - TERIMA kota/kabupaten tersebut dan area sekitarnya dalam provinsi yang sama
+        //         - Contoh untuk "Sleman": terima "Yogyakarta", "Bantul", "Kulon Progo" (area DIY)
+        //      d. Jika input adalah kota tunggal (contoh: "Jember"):
+        //         - TERIMA HANYA kota tersebut
+        //   2. Periksa variasi penulisan:
+        //      - "DKI Jakarta" = "Jakarta"
+        //      - "DI Yogyakarta" = "Yogyakarta"
+        //      - "Kota Denpasar" = "Denpasar"
+        //   3. WAJIB mengembalikan JSON kosong {} untuk domisili yang:
+        //      - Tidak sesuai dengan aturan di atas
+        //      - Berada di luar area yang ditentukan
+        //      - Tidak ada informasi domisili yang jelas dalam CV
+        //      - Format penulisan domisili tidak standar atau ambigu`;
       }
 
       if (khususmbakrere === "true" || khususmbakrere === true) {
@@ -116,7 +135,7 @@ exports.handleScreeningCV = async (req, res) => {
         "perkiraanUmur": "[Angka Umur]", // Hitung: 22 + total pengalaman kerja dalam tahun
         "lokasiDomisili": "[Kota/Daerah Domisili]",
         // --- Edit 2: Refine description for pendidikanTerakhir ---
-        "pendidikanTerakhir": "[Tingkat Pendidikan Formal Terakhir, e.g., S1 Teknik Informatika, SMA Negeri 1. HINDARI bootcamp jika ada pendidikan formal]",
+        "pendidikanTerakhir": "[Tingkat Pendidikan Formal Terakhir, e.g., S1 Teknik Informatika, SMA Negeri 1. HINDARI bootcamp jika ada pendidikan formal. Jika tidak ditemukan pendidikan terakhir, kembalikan null]",
         // --- End Edit 2 ---
         "daftarPengalaman": [
           {
@@ -166,7 +185,9 @@ exports.handleScreeningCV = async (req, res) => {
       if (
         extractedData &&
         Object.keys(extractedData).length > 0 &&
-        extractedData.namaLengkap // Basic check for valid data
+        extractedData.namaLengkap &&
+        extractedData.lokasiDomisili &&
+        extractedData.totalPengalamanKerja
       ) {
         // Successfully processed and extracted
         await prisma.screeningcv.update({
