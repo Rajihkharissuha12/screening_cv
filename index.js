@@ -12,13 +12,21 @@ const corsOptions = {
     "http://localhost:3000",
     "https://hr-briliant.vercel.app", // Remove trailing slash
   ],
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Add OPTIONS
-  allowedHeaders: ["Content-Type", "Authorization", "x-requested-with"],
-  credentials: true, // Add this
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE", // Wider method coverage
+  allowedHeaders: "Content-Type,Authorization,X-Requested-With", // Case-sensitive
+  credentials: true,
+  preflightContinue: false,
+  optionsSuccessStatus: 204,
 };
 app.use(cors(corsOptions)); // Use the configured options
 
-// Add this before your routes
+// Add this right after CORS middleware
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "https://hr-briliant.vercel.app");
+  res.header("Vary", "Origin");
+  next();
+});
+
 app.options("*", cors(corsOptions)); // Handle preflight for all routes
 
 app.use(express.json());
