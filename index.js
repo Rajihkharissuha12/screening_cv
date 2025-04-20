@@ -8,16 +8,18 @@ const ShowRoutes = require("./routes/showRoutes");
 
 // 2. Configure CORS to allow only your frontend origin
 const corsOptions = {
-  // --- Edit 1: Change origin to an array of allowed origins ---
   origin: [
-    "http://localhost:3000", // Keep the existing localhost origin
-    "https://hr-briliant.vercel.app/", // Add the Vercel frontend origin
+    "http://localhost:3000",
+    "https://hr-briliant.vercel.app", // Remove trailing slash
   ],
-  methods: ["GET", "POST", "PUT", "DELETE"], // Explicitly allow needed methods
-  allowedHeaders: ["Content-Type", "Authorization"], // Add required headers
-  // --- End Edit 1 ---
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Add OPTIONS
+  allowedHeaders: ["Content-Type", "Authorization", "x-requested-with"],
+  credentials: true, // Add this
 };
 app.use(cors(corsOptions)); // Use the configured options
+
+// Add this before your routes
+app.options("*", cors(corsOptions)); // Handle preflight for all routes
 
 app.use(express.json());
 app.use("/api/cv", ScreeningRoutes);
