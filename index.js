@@ -13,6 +13,8 @@ const corsOptions = {
     "http://localhost:3000", // Keep the existing localhost origin
     "https://hr-briliant.vercel.app/", // Add the Vercel frontend origin
   ],
+  methods: ["GET", "POST", "PUT", "DELETE"], // Explicitly allow needed methods
+  allowedHeaders: ["Content-Type", "Authorization"], // Add required headers
   // --- End Edit 1 ---
 };
 app.use(cors(corsOptions)); // Use the configured options
