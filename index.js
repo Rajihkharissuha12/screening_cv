@@ -7,25 +7,8 @@ const UploadRoutes = require("./routes/uploadRoutes");
 const ShowRoutes = require("./routes/showRoutes");
 
 // 2. Configure CORS to allow only your frontend origin
-const corsOptions = {
-  origin: [
-    "http://localhost:3000",
-    "https://hr-briliant.vercel.app", // Remove trailing slash
-  ],
-  methods: "GET,HEAD,PUT,PATCH,POST,DELETE", // Wider method coverage
-  allowedHeaders: "Content-Type,Authorization,X-Requested-With", // Case-sensitive
-  credentials: true,
-  preflightContinue: false,
-  optionsSuccessStatus: 204,
-};
-app.use(cors(corsOptions)); // Use the configured options
-
-// Add this right after CORS middleware
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "https://hr-briliant.vercel.app");
-  res.header("Vary", "Origin");
-  next();
-});
+const corsOptions = {};
+app.use(cors()); // Use the configured options
 
 app.options("*", cors(corsOptions)); // Handle preflight for all routes
 
