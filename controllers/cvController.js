@@ -70,7 +70,10 @@ exports.handleScreeningCV = async (req, res) => {
             3. WAJIB mengembalikan JSON kosong {} untuk domisili yang:
                - Tidak sesuai dengan aturan di atas
                - Berada di luar area yang ditentukan
-               - Tidak memiliki hubungan administratif dengan lokasi yang diminta`;
+               - Tidak memiliki hubungan administratif dengan lokasi yang diminta
+               - Tidak ada informasi domisili yang jelas dalam CV
+               - Format penulisan domisili tidak standar atau ambigu
+               - Domisili hanya berupa nama jalan tanpa kota/kabupaten yang jelas`;
       }
 
       if (khususmbakrere === "true" || khususmbakrere === true) {
