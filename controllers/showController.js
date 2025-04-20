@@ -60,8 +60,17 @@ exports.getScreeningHistory = async (req, res) => {
     }
     // --- End Merging Logic ---
 
-    // --- Step 3: Return the merged history object ---
-    return res.json(mergedPriorityData); // Return the merged object
+    // --- Step 3: Transform the merged data object into an array ---
+    const result_array = Object.entries(mergedPriorityData).map(
+      ([tanggal, data]) => ({
+        tanggal_process: tanggal, // The date string
+        data: data, // The merged data object for that date
+      })
+    );
+    // --- End Transformation ---
+
+    // --- Step 4: Return the transformed array ---
+    return res.json(result_array); // Return the array
   } catch (error) {
     console.error("Error fetching priority CV history:", error); // Updated error message
     return res.status(500).json({
