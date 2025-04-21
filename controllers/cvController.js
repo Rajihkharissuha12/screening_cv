@@ -4,6 +4,7 @@ const { GoogleGenAI } = require("@google/genai");
 const pdf = require("pdf-parse");
 const axios = require("axios"); // Corrected import
 const moment = require("moment"); // Add this line to import moment
+const { cleanCVText } = require("../utils/cleaningcv");
 
 const prisma = new PrismaClient();
 
@@ -26,7 +27,7 @@ exports.handleScreeningCV = async (req, res) => {
 
   // Initialize Gemini AI client once
 
-  let ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  let ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY2 });
 
   // --- Stage 1: Process each file ---
   for (const file of files) {
@@ -42,12 +43,14 @@ exports.handleScreeningCV = async (req, res) => {
       // Parse PDF content
       const data = await pdf(response.data);
 
+      // Cleaning CV
+      const cleanedText = await cleanCVText(data.text);
+
       // --- Dynamically build filter instructions for the prompt ---
       let filterCondition = "";
       let filterInstructions = "";
-      if (minExperienceRequired && minExperienceRequired !== "0") {
-        filterInstructions += `\n          - Minimum total durasi pengalaman kerja: ${minExperienceRequired} (Hanya tampilkan jika total pengalaman kerja kandidat DI ATAS ${minExperienceRequired} ATAU SAMA PERSIS)`;
-      }
+
+      // Filter by Domicile
       if (desiredDomicile) {
         filterInstructions += `\n          - Lokasi domisili yang diinginkan: ${desiredDomicile}
           - ATURAN KETAT DOMISILI (WAJIB DIPATUHI):
@@ -70,34 +73,31 @@ exports.handleScreeningCV = async (req, res) => {
                - Jika domisili kandidat tidak 100% memenuhi hierarki wilayah → Kembalikan null
                - Jika terdapat lebih dari 1 domisili dalam CV → Prioritaskan domisili terbaru
                - Jika domisili tidak konsisten di berbagai bagian CV → Anggap tidak valid`;
-
-        // - ATURAN KETAT untuk pengecekan domisili:
-        //   1. Pengecekan berdasarkan hierarki wilayah administratif:
-        //      a. Jika input adalah provinsi (contoh: "Bali"):
-        //         - TERIMA semua kota/kabupaten dalam provinsi tersebut
-        //         - Contoh untuk "Bali": terima "Denpasar", "Badung", "Gianyar", dll
-        //      b. Jika input adalah kota besar (contoh: "Jakarta"):
-        //         - TERIMA kota tersebut dan kota satelitnya
-        //         - Contoh untuk "Jakarta": terima "Jakarta Pusat", "Tangerang", "Bekasi", "Depok", "Bogor"
-        //      c. Jika input adalah kabupaten/kota dalam provinsi (contoh: "Sleman"):
-        //         - TERIMA kota/kabupaten tersebut dan area sekitarnya dalam provinsi yang sama
-        //         - Contoh untuk "Sleman": terima "Yogyakarta", "Bantul", "Kulon Progo" (area DIY)
-        //      d. Jika input adalah kota tunggal (contoh: "Jember"):
-        //         - TERIMA HANYA kota tersebut
-        //   2. Periksa variasi penulisan:
-        //      - "DKI Jakarta" = "Jakarta"
-        //      - "DI Yogyakarta" = "Yogyakarta"
-        //      - "Kota Denpasar" = "Denpasar"
-        //   3. WAJIB mengembalikan JSON kosong {} untuk domisili yang:
-        //      - Tidak sesuai dengan aturan di atas
-        //      - Berada di luar area yang ditentukan
-        //      - Tidak ada informasi domisili yang jelas dalam CV
-        //      - Format penulisan domisili tidak standar atau ambigu`;
       }
 
+      // Filter by Minimum Experience
+      if (minExperienceRequired && minExperienceRequired !== "0") {
+        filterInstructions += `\n          - Minimum total durasi pengalaman kerja: ${minExperienceRequired} (Hanya tampilkan jika total pengalaman kerja kandidat DI ATAS ${minExperienceRequired} ATAU SAMA PERSIS)`;
+      }
+
+      // Filter by Khusus MBakrere
       if (khususmbakrere === "true" || khususmbakrere === true) {
         filterInstructions += `
-          - Untuk setiap pengalaman kerja, hanya masukkan pengalaman yang memiliki durasi MINIMAL 1 tahun atau 12 bulan. Jika durasi kurang dari itu, JANGAN masukkan ke dalam daftar pengalaman.`;
+      - ATURAN KETAT PENGALAMAN KERJA (WAJIB DIPATUHI):
+        1. Untuk setiap pengalaman kerja:
+           - HANYA masukkan pengalaman dengan durasi MINIMAL 1 tahun atau 12 bulan
+           - Pengalaman dengan durasi < 12 bulan WAJIB DIHAPUS dari daftar
+           - Perhitungan durasi harus TEPAT berdasarkan tanggal mulai dan selesai
+        
+        2. TINDAKAN PAKSA:
+           - Jika ada keraguan dalam perhitungan durasi → Abaikan pengalaman tersebut
+           - Jika tanggal tidak lengkap → Abaikan pengalaman tersebut
+           - Jika total pengalaman setelah filter < 12 bulan → Kembalikan JSON kosong {}
+           
+        3. CONTOH PENERAPAN:
+           - Pengalaman 11 bulan 29 hari → HAPUS
+           - Pengalaman 12 bulan tepat → MASUKKAN
+           - Pengalaman 13 bulan → MASUKKAN`;
       }
 
       if (filterInstructions) {
@@ -112,9 +112,8 @@ exports.handleScreeningCV = async (req, res) => {
       // --- Define the extraction prompt for Gemini ---
       const extractionPrompt = `
       Berikut adalah teks mentah dari CV:
-      \`\`\`
-      ${data.text}
-      \`\`\`
+
+      ${cleanedText}
 
       PERINTAH TEGAS:
       - JANGAN berikan penjelasan APAPUN.
@@ -141,7 +140,8 @@ exports.handleScreeningCV = async (req, res) => {
           {
             "kantor": "[Nama Kantor]", 
             "periode": "[Tanggal Mulai - Tanggal Selesai]", 
-            "durasi": "[Total Durasi - Calculate consistently: For partial months, count only if >15 days. Example: Jan 1 - Mar 15 = 2 months, Jan 1 - Mar 16 = 3 months]"
+            "jobtitle": "[Jabatan]",
+            "durasi": "[Total Durasi - STRICT CALCULATION RULES: 1) Year-only format (2024-2025): Count as exactly 12 months. 2) Year-only with present (2024-present): Calculate months from January of start year to current date. 3) Full date format (Jan 2024 - Mar 2024): Calculate exact months. 4) Partial months: Count if >15 days. 5) Missing start/end dates: Mark as invalid and exclude from experience list. ALL durations MUST be expressed in numerical format (X Tahun Y Bulan)]"
           },
           // ... (lanjutkan jika ada)
         ],
