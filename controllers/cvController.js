@@ -20,7 +20,7 @@ exports.handleScreeningCV = async (req, res) => {
 
   const files = await prisma.screeningcv.findMany({
     where: {
-      status: "uploaded",
+      status: "cleaned",
     },
     take: 10, // Consider making 'take' dynamic or configurable
   });
@@ -36,15 +36,15 @@ exports.handleScreeningCV = async (req, res) => {
 
     try {
       // Fetch PDF content
-      const response = await axios.get(file.url_cv, {
-        responseType: "arraybuffer",
-      });
+      // const response = await axios.get(file.url_cv, {
+      //   responseType: "arraybuffer",
+      // });
 
-      // Parse PDF content
-      const data = await pdf(response.data);
+      // // Parse PDF content
+      // const data = await pdf(response.data);
 
-      // Cleaning CV
-      const cleanedText = await cleanCVText(data.text);
+      // // Cleaning CV
+      // const cleanedText = await cleanCVText(data.text);
 
       // --- Dynamically build filter instructions for the prompt ---
       let filterCondition = "";
@@ -113,7 +113,7 @@ exports.handleScreeningCV = async (req, res) => {
       const extractionPrompt = `
       Berikut adalah teks mentah dari CV:
 
-      ${cleanedText}
+      ${file.basic_cv}
 
       PERINTAH TEGAS:
       - JANGAN berikan penjelasan APAPUN.
@@ -219,6 +219,7 @@ exports.handleScreeningCV = async (req, res) => {
         await prisma.screeningcv.update({
           data: {
             status: "filtered_out",
+            tanggal_screening: moment().format("YYYY-MM-DD"),
             response: {
               info: `Filtered by AI criteria or invalid/empty JSON response. Criteria: Exp >= ${
                 minExperienceRequired || "N/A"
@@ -240,7 +241,10 @@ exports.handleScreeningCV = async (req, res) => {
       console.error(`Error processing file ${fileNameForLogs}:`, err);
       try {
         await prisma.screeningcv.update({
-          data: { status: "error" },
+          data: {
+            status: "error",
+            tanggal_screening: moment().format("YYYY-MM-DD"),
+          },
           where: { id: file.id },
         });
       } catch (dbError) {
@@ -347,7 +351,7 @@ exports.handleScreeningCV = async (req, res) => {
 
   // --- Return consolidated and SORTED results ---
   const remainingUploaded = await prisma.screeningcv.count({
-    where: { status: "uploaded" },
+    where: { status: "cleaned" },
   });
 
   const formatResults = {

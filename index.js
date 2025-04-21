@@ -5,6 +5,7 @@ const cors = require("cors"); // 1. Import cors
 const ScreeningRoutes = require("./routes/cvRoutes");
 const UploadRoutes = require("./routes/uploadRoutes");
 const ShowRoutes = require("./routes/showRoutes");
+const CleaningRoutes = require("./routes/cleaningRoutes");
 
 // 2. Configure CORS to allow only your frontend origin
 const corsOptions = {
@@ -27,6 +28,7 @@ app.use(express.json());
 app.use("/api/cv", ScreeningRoutes);
 app.use("/api/cvupload", UploadRoutes);
 app.use("/api", ShowRoutes);
+app.use("/api/cv", CleaningRoutes);
 
 app.get("/", (req, res) => {
   res.send("API CV Reader aktif");
