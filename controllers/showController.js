@@ -189,7 +189,7 @@ exports.getScreeningHistory = async (req, res) => {
     // --- End Filtering Step ---
 
     // --- Step 4 (Renumbered): Return the transformed array ---
-    return res.json(formatResults); // Return the array
+    return res.json([formatResults]); // Return the array
   } catch (error) {
     console.error("Error fetching priority CV history:", error); // Updated error message
     return res.status(500).json({
