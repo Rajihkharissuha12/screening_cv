@@ -213,8 +213,7 @@ exports.handleScreeningCV = async (req, res) => {
         "totalPengalamanKerja": "[Calculate total work experience by summing all valid 'durasi' values from 'daftarPengalaman' array. Format must be 'X Tahun Y Bulan'. Return null if total experience doesn't meet minimum ${minExperienceRequired} requirement OR if no valid experience exists (not empty string, not 0, no other format).]"
       }
 
-      Output HARUS HANYA berupa JSON di atas untuk kandidat yang lolos filter, atau JSON kosong {} jika tidak lolos. TIDAK ADA TEKS LAIN, TIDAK ADA MARKDOWN BACKTICKS.
-      `;
+      Output HARUS HANYA berupa JSON di atas untuk kandidat yang lolos filter, atau JSON kosong {} jika tidak lolos. TIDAK ADA TEKS LAIN, TIDAK ADA MARKDOWN BACKTICKS.`;
 
       // --- Call Gemini AI ---
       const geminiResponse = await ai.models.generateContent({

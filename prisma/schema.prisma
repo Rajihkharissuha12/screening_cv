@@ -32,6 +32,7 @@ model Prioritycv {
   id    Int     @id @default(autoincrement())
   tanggal String
   response Json
+  status_update Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

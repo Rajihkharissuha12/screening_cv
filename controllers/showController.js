@@ -65,26 +65,7 @@ exports.getScreeningHistory = async (req, res) => {
     }
     // --- End Merging Logic ---
 
-    // --- New Step: Filter processingSummary to remove duplicates from sortedCandidates ---
-    for (const tanggal in mergedPriorityData) {
-      const dateData = mergedPriorityData[tanggal];
-
-      // Create a Set of url_cv values from sortedCandidates for efficient lookup
-      const sortedCandidateUrls = new Set(
-        dateData.sortedCandidates
-          .map((candidate) => candidate.url_cv)
-          .filter((url) => url) // Ensure url exists
-      );
-
-      // Filter processingSummary, keeping only items whose url_cv is NOT in the Set
-      dateData.processingSummary = dateData.processingSummary.filter(
-        (summaryItem) =>
-          !summaryItem.url_cv || !sortedCandidateUrls.has(summaryItem.url_cv)
-      );
-    }
-    // --- End Filtering Step ---
-
-    // --- Step 3 (Renumbered): Transform the merged data object into an array ---
+    // // --- Step 3 (Renumbered): Transform the merged data object into an array ---
     const result_array = Object.entries(mergedPriorityData).map(
       ([tanggal, data]) => ({
         tanggal_process: tanggal, // The date string
@@ -92,7 +73,7 @@ exports.getScreeningHistory = async (req, res) => {
       })
     );
     // --- End Transformation ---
-
+    // console.log(result_array[0].data.sortedCandidates);
     // --- Step 4 (Renumbered): Return the transformed array ---
     let processedCandidates = result_array[0].data.processingSummary;
     function parseExperienceToMonths(expString) {
@@ -165,22 +146,7 @@ exports.getScreeningHistory = async (req, res) => {
     // Replace the original array with filtered and sorted candidates
     processedCandidates = validCandidates;
 
-    // --- Filter to keep only candidates matching the highest priority level ---
-    let finalCandidates = [];
-    if (processedCandidates.length > 0) {
-      // Get the experience level of the top candidate (highest experience)
-      const highestExperienceLevel =
-        processedCandidates[0].totalMonthsExperience;
-
-      // Filter the list to include only candidates with that same highest experience level
-      finalCandidates = processedCandidates.filter(
-        (candidate) =>
-          candidate.totalMonthsExperience === highestExperienceLevel
-      );
-      // Candidates within this final list are already sorted by education due to the initial sort
-    }
     // --- End Filter ---
-
     // --- Return consolidated and SORTED results ---
     const remainingUploaded = await prisma.screeningcv.count({
       where: { status: "cleaned" },
@@ -188,30 +154,42 @@ exports.getScreeningHistory = async (req, res) => {
 
     const formatResults = {
       // Return the FILTERED and sorted list
-      sortedCandidates: finalCandidates.map((c) => ({
-        // Use finalCandidates here
-        nama_file: c.nama_file,
-        url_cv: c.url_cv,
-        namaLengkap: c.namaLengkap,
-        totalPengalamanKerja: c.totalPengalamanKerja, // Original string for display
-        pendidikanTerakhir: c.pendidikanTerakhir, // Original string for display
-        lokasiDomisili: c.lokasiDomisili,
-        // Optionally include the full extracted details if needed by the frontend
-        extractedDetails: c.extractedDetails,
-      })),
-      processingSummary: processedCandidates, // Summary of processing status for each file (processed/filtered_out/error)
-      remainingUploadedCount: remainingUploaded,
+      tanggal_process: result_array[0].tanggal_process,
+      data: {
+        sortedCandidates: result_array[0].data.sortedCandidates.map((c) => ({
+          // Use finalCandidates here
+          nama_file: c.nama_file,
+          url_cv: c.url_cv,
+          namaLengkap: c.namaLengkap,
+          totalPengalamanKerja: c.totalPengalamanKerja, // Original string for display
+          pendidikanTerakhir: c.pendidikanTerakhir, // Original string for display
+          lokasiDomisili: c.lokasiDomisili,
+          // Optionally include the full extracted details if needed by the frontend
+          extractedDetails: c.extractedDetails,
+        })),
+        processingSummary: processedCandidates, // Summary of processing status for each file (processed/filtered_out/error)
+      },
     };
 
-    const priorityDatas = await prisma.prioritycv.create({
-      data: {
-        tanggal: moment().format("DD-MM-YYYY"),
-        response: formatResults,
-      },
-    });
+    // --- New Step: Filter processingSummary to remove duplicates from sortedCandidates ---
+    // Create a Set of url_cv values from sortedCandidates for efficient lookup
+    // Create a Set of URLs from sortedCandidates for efficient lookup
+    const sortedCandidateUrls = new Set(
+      formatResults.data.sortedCandidates
+        ?.map((candidate) => candidate?.url_cv)
+        .filter(Boolean) || []
+    );
+
+    // Filter out processingSummary entries that exist in sortedCandidates
+    formatResults.data.processingSummary =
+      formatResults.data.processingSummary.filter(
+        (summaryItem) =>
+          !summaryItem.url_cv || !sortedCandidateUrls.has(summaryItem.url_cv)
+      );
+    // --- End Filtering Step ---
 
     // --- Step 4 (Renumbered): Return the transformed array ---
-    return res.json(result_array); // Return the array
+    return res.json(formatResults); // Return the array
   } catch (error) {
     console.error("Error fetching priority CV history:", error); // Updated error message
     return res.status(500).json({
