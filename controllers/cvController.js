@@ -3,7 +3,7 @@ const { PrismaClient } = require("@prisma/client");
 const { GoogleGenAI } = require("@google/genai");
 const pdf = require("pdf-parse");
 const axios = require("axios"); // Corrected import
-const moment = require("moment"); // Add this line to import moment
+const moment = require("moment-timezone"); // Add this line to import moment
 const { cleanCVText } = require("../utils/cleaningcv");
 
 const prisma = new PrismaClient();
@@ -52,22 +52,23 @@ exports.handleScreeningCV = async (req, res) => {
 
       // Filter by Domicile
       if (desiredDomicile) {
-        filterInstructions += `\n          - Lokasi domisili yang diinginkan: ${desiredDomicile}
-          - ATURAN KETAT DOMISILI (WAJIB DIPATUHI):
+        filterInstructions += `
+        1. FILTER DOMISILI (WAJIB DIPATUHI):
+          - Kandidat HARUS memiliki domisili sesuai "${desiredDomicile}".
+          - Jika domisili tidak sesuai, TIDAK PERLU CEK FILTER LAIN, langsung kembalikan JSON kosong {}.
+          - Aturan detail:
             1. KANDIDAT HARUS DITOLAK JIKA:
                - Domisili tidak disebutkan secara eksplisit dalam CV
                - Hanya menyebut nama jalan/kecamatan tanpa kota/kabupaten
                - Menyebut lokasi lebih dari 50km dari area yang diminta
                - Menggunakan singkatan tidak resmi (e.g., "Jkt" untuk Jakarta)
                - Hanya menyebut kode pos tanpa nama lokasi
-
             2. CONTOH PENOLAKAN OTOMATIS:
                - Filter: "Bali" → CV menyebut "Denpasar" → DITERIMA
                - Filter: "Bali" → CV menyebut "Bandung" → DITOLAK
                - Filter: "Jakarta" → CV menyebut "Tangerang Selatan" → DITERIMA
                - Filter: "Sleman" → CV menyebut "Bantul" → DITERIMA (masih DIY)
                - Filter: "Surabaya" → CV menyebut "Gresik" → DITOLAK
-
             3. TINDAKAN PAKSA:
                - Jika ada keraguan sedikit pun tentang kecocokan domisili → Kembalikan nul
                - Jika domisili kandidat tidak 100% memenuhi hierarki wilayah → Kembalikan null
@@ -77,23 +78,48 @@ exports.handleScreeningCV = async (req, res) => {
 
       // Filter by Minimum Experience
       if (minExperienceRequired && minExperienceRequired !== "0") {
-        filterInstructions += `\n          - Minimum total durasi pengalaman kerja: ${minExperienceRequired} (Hanya tampilkan jika total pengalaman kerja kandidat DI ATAS ${minExperienceRequired} ATAU SAMA PERSIS)`;
+        filterInstructions += `\n
+        2. FILTER MINIMUM PENGALAMAN KERJA (WAJIB DIPATUHI):
+           1. Kandidat HARUS memiliki TOTAL pengalaman kerja minimal ${minExperienceRequired}.
+           2. PERHATIAN KHUSUS: Jika total pengalaman kerja KURANG dari ${minExperienceRequired}, WAJIB mengembalikan JSON kosong {} ATAU BERIKAN NILAI NULL.
+           3. Perhitungan pengalaman kerja:
+              * Hitung total durasi dari SEMUA pengalaman kerja yang valid
+              * Format durasi: "X Tahun Y Bulan"
+              * Contoh: Jika filter ${minExperienceRequired}
+                - Total "1 Tahun 11 Bulan" → DITOLAK (kurang dari ${minExperienceRequired})
+                - Total "${minExperienceRequired}  0 Bulan" → DITERIMA (tepat ${minExperienceRequired})
+                - Total "${minExperienceRequired}  1 Bulan" → DITERIMA (lebih dari ${minExperienceRequired})
+           4. ATURAN KETAT:
+              * Jika ada keraguan dalam perhitungan → WAJIB kembalikan NULL
+              * Jika format durasi tidak jelas → WAJIB kembalikan NULL
+              * Jika total pengalaman < ${minExperienceRequired} → WAJIB kembalikan NULL
+              * TIDAK ADA TOLERANSI untuk pengalaman kurang dari ${minExperienceRequired}
+           5. HANYA lanjutkan proses jika total pengalaman ≥ ${minExperienceRequired}.
+           6. CONTOH PENERAPAN:
+           - Pengalaman < ${minExperienceRequired} → HAPUS
+           - Pengalaman ${minExperienceRequired} tepat → MASUKKAN
+           - Pengalaman > ${minExperienceRequired} → MASUKKAN`;
       }
+      // 4. TIDAK ADA TOLERANSI:
+      // - Jika kurang 1 hari dari ${minExperienceRequired} → DITOLAK
+      // - Jika ada keraguan sedikit pun → DITOLAK
 
       // Filter by Khusus MBakrere
       if (khususmbakrere === "true" || khususmbakrere === true) {
-        filterInstructions += `
-      - ATURAN KETAT PENGALAMAN KERJA (WAJIB DIPATUHI):
+        filterInstructions += `\n
+      3. FILTER TAMBAHAN PENGALAMAN KERJA (WAJIB DIPATUHI):
         1. Untuk setiap pengalaman kerja:
            - HANYA masukkan pengalaman dengan durasi MINIMAL 1 tahun atau 12 bulan
            - Pengalaman dengan durasi < 12 bulan WAJIB DIHAPUS dari daftar
            - Perhitungan durasi harus TEPAT berdasarkan tanggal mulai dan selesai
-        
         2. TINDAKAN PAKSA:
            - Jika ada keraguan dalam perhitungan durasi → Abaikan pengalaman tersebut
            - Jika tanggal tidak lengkap → Abaikan pengalaman tersebut
-           - Jika total pengalaman setelah filter < 12 bulan → Kembalikan JSON kosong {}
-           
+           - Jika total pengalaman setelah filter < 12 bulan → Kembalikan JSON kosong {} atau tidak masukkan ke daftar pengalaman kerja
+           - Jika total pengalaman setelah filter = 0 Tahun → Kembalikan JSON kosong {} atau tidak masukkan ke daftar pengalaman kerja
+           - Jika total pengalaman setelah filter > 0 Tahun → MASUKKAN ke daftar pengalaman kerja 
+           - Jika total pengalaman setelah filter = 12 bulan → MASUKKAN ke daftar pengalaman kerja
+           - Jika total pengalaman setelah filter > 12 bulan → MASUKKAN ke daftar pengalaman kerja
         3. CONTOH PENERAPAN:
            - Pengalaman 11 bulan 29 hari → HAPUS
            - Pengalaman 12 bulan tepat → MASUKKAN
@@ -102,10 +128,12 @@ exports.handleScreeningCV = async (req, res) => {
 
       if (filterInstructions) {
         filterCondition = `
-      - Filter hasil berdasarkan kriteria berikut:${filterInstructions}
-      - PERHATIAN: Jika kandidat TIDAK MEMENUHI SALAH SATU SAJA dari kriteria di atas, WAJIB mengembalikan JSON kosong {}.
+      - FILTERING WAJIB BERURUTAN (JANGAN LEWATKAN SATU PUN):
+      ${filterInstructions}
+      - PERHATIKAN: Jika kandidat TIDAK MEMENUHI SALAH SATU SAJA dari kriteria di atas, WAJIB mengembalikan JSON kosong {} tanpa memproses lebih lanjut.
       - Contoh: Jika domisili yang diminta adalah "Bali" dan kandidat berdomisili di "Jakarta", maka HARUS mengembalikan JSON kosong {} WALAUPUN kriteria lainnya terpenuhi.
-      - Setiap kriteria bersifat WAJIB dan MUTLAK. Tidak ada toleransi atau pengecualian.`;
+      - Setiap kriteria bersifat WAJIB dan MUTLAK. Tidak ada toleransi atau pengecualian.
+      - HANYA proses dan ekstrak data untuk kandidat yang LOLOS SEMUA FILTER di atas.`;
       }
       // --- End Dynamic build ---
 
@@ -120,10 +148,8 @@ exports.handleScreeningCV = async (req, res) => {
       - JANGAN gunakan kalimat pembuka atau penutup.
       - JANGAN menyertakan perhitungan umur.
       - Pastikan SEMUA informasi yang diekstrak berasal LANGSUNG dari teks CV yang diberikan.
-      // --- Edit 1: Add specific instruction for education ---
       - Untuk "pendidikanTerakhir", prioritaskan pendidikan formal terakhir (Universitas, SMA/SMK, SMP). Jika ada pendidikan formal dan bootcamp, pilih yang formal. Jika hanya ada bootcamp, baru gunakan itu.
-      // --- End Edit 1 ---
-      - HANYA berikan output sesuai format yang diminta di bawah.${
+      - HANYA berikan output sesuai Filter yang diminta di bawah.${
         filterCondition /* Inject dynamic filter conditions here */
       }
 
@@ -133,19 +159,58 @@ exports.handleScreeningCV = async (req, res) => {
         "namaLengkap": "[Nama Lengkap Kandidat]",
         "perkiraanUmur": "[Angka Umur]", // Hitung: 22 + total pengalaman kerja dalam tahun
         "lokasiDomisili": "[Kota/Daerah Domisili]",
-        // --- Edit 2: Refine description for pendidikanTerakhir ---
         "pendidikanTerakhir": "[Tingkat Pendidikan Formal Terakhir, e.g., S1 Teknik Informatika, SMA Negeri 1. HINDARI bootcamp jika ada pendidikan formal. Jika tidak ditemukan pendidikan terakhir, kembalikan null]",
-        // --- End Edit 2 ---
         "daftarPengalaman": [
           {
             "kantor": "[Nama Kantor]", 
             "periode": "[Tanggal Mulai - Tanggal Selesai]", 
             "jobtitle": "[Jabatan]",
-            "durasi": "[Total Durasi - STRICT CALCULATION RULES: 1) Year-only format (2024-2025): Count as exactly 12 months. 2) Year-only with present (2024-present): Calculate months from January of start year to current date. 3) Full date format (Jan 2024 - Mar 2024): Calculate exact months. 4) Partial months: Count if >15 days. 5) Missing start/end dates: Mark as invalid and exclude from experience list. ALL durations MUST be expressed in numerical format (X Tahun Y Bulan)]"
+            "durasi": "[Total Durasi - STRICT CALCULATION RULES:
+                      - DO NOT modify or change the original 'periode' field. Use it exactly as extracted from the CV.
+                      - You MUST always calculate and fill the 'durasi' field completely and correctly, following these rules:
+                        1) Year-only format (e.g., 2024-2025):
+                          - Assume start date: January 1st of start year
+                          - Assume end date: December 31st of end year
+                          - Calculate exact months between these dates
+                        2) Month-Year format (e.g., Mar 2024 - Aug 2024):
+                          - Assume start date: 1st day of start month
+                          - Assume end date: Last day of end month
+                          - Calculate exact months between these dates
+                        3) Month-to-Month Year format (e.g., Mar-Jun 2024):
+                          - Assume start date: 1st day of start month
+                          - Assume end date: Last day of end month
+                          - Both months must be in same year
+                          - Calculate exact months between these dates
+                        4) If the end period is 'present', 'current', or 'sekarang':
+                          - Use the current month and year (${moment()
+                            .tz("Asia/Jakarta")
+                            .format(
+                              "DD-MM-YYYY"
+                            )}) as the end date for calculation
+                        5) If the start or end month is missing, assume January for missing start month and December for missing end month.
+                        6) If the start or end year is missing, use the year from the other period (e.g., if start year missing, use end year).
+                        7) Partial months:
+                          - Count as 1 month if ≥ 15 days
+                          - Ignore if < 15 days
+                        8) Invalid formats:
+                          - If both start and end dates are missing, mark as invalid and exclude from experience list
+                          - If unclear/ambiguous dates, mark as invalid and exclude from experience list
+                          - If multiple date ranges, use the most recent
+                      - ALL durations MUST be expressed as 'X Tahun Y Bulan'
+                      - Example calculations:
+                          - '2024-2025' = 2 Tahun 0 Bulan
+                          - 'Jan 2024 - Mar 2024' = 0 Tahun 3 Bulan
+                          - 'Mar-Jun 2024' = 0 Tahun 4 Bulan
+                          - '2024-present' = Calculate from Jan 1, 2024 to today (${moment()
+                            .tz("Asia/Jakarta")
+                            .format("DD-MM-YYYY")})
+                      - If you find missing months or years in the period, fill them in for calculation as per the rules above, but DO NOT change the original 'periode' text.
+                      - The 'durasi' field must always be filled with the correct calculation, never left blank or incomplete.
+                    ]"
           },
           // ... (lanjutkan jika ada)
         ],
-        "totalPengalamanKerja": "[Total durasi pengalaman kerja dalam format 'X Tahun Y Bulan'. Harus diisi dengan angka jika ada pengalaman. Kosongkan jika tidak ada pengalaman.]"
+        "totalPengalamanKerja": "[Calculate total work experience by summing all valid 'durasi' values from 'daftarPengalaman' array. Format must be 'X Tahun Y Bulan'. Return null if total experience doesn't meet minimum ${minExperienceRequired} requirement OR if no valid experience exists (not empty string, not 0, no other format).]"
       }
 
       Output HARUS HANYA berupa JSON di atas untuk kandidat yang lolos filter, atau JSON kosong {} jika tidak lolos. TIDAK ADA TEKS LAIN, TIDAK ADA MARKDOWN BACKTICKS.
@@ -153,7 +218,7 @@ exports.handleScreeningCV = async (req, res) => {
 
       // --- Call Gemini AI ---
       const geminiResponse = await ai.models.generateContent({
-        model: "gemini-2.0-flash-lite",
+        model: "gemini-2.0-flash",
         contents: extractionPrompt,
       });
 

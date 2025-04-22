@@ -1,5 +1,6 @@
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
+const moment = require("moment-timezone"); // Add this line to import moment
 
 // --- Updated function to fetch and MERGE Prioritycv data by date ---
 exports.getScreeningHistory = async (req, res) => {
@@ -91,6 +92,123 @@ exports.getScreeningHistory = async (req, res) => {
       })
     );
     // --- End Transformation ---
+
+    // --- Step 4 (Renumbered): Return the transformed array ---
+    let processedCandidates = result_array[0].data.processingSummary;
+    function parseExperienceToMonths(expString) {
+      if (!expString || typeof expString !== "string") return 0;
+      let totalMonths = 0;
+      const yearMatch = expString.match(/(\d+)\s*Tahun/i);
+      const monthMatch = expString.match(/(\d+)\s*Bulan/i);
+      if (yearMatch) totalMonths += parseInt(yearMatch[1], 10) * 12;
+      if (monthMatch) totalMonths += parseInt(monthMatch[1], 10);
+      return totalMonths;
+    }
+
+    // Helper function to assign a rank to education level
+    function getEducationRank(eduString) {
+      if (!eduString || typeof eduString !== "string") return 0;
+      const lowerEdu = eduString.toLowerCase();
+      // Assign ranks (higher is better)
+      if (
+        lowerEdu.includes("s3") ||
+        lowerEdu.includes("doktor") ||
+        lowerEdu.includes("phd")
+      )
+        return 6;
+      if (lowerEdu.includes("s2") || lowerEdu.includes("master")) return 5;
+      if (
+        lowerEdu.includes("s1") ||
+        lowerEdu.includes("sarjana") ||
+        lowerEdu.includes("bachelor")
+      )
+        return 4;
+      if (lowerEdu.includes("d4")) return 3.5;
+      if (lowerEdu.includes("d3") || lowerEdu.includes("diploma tiga"))
+        return 3;
+      if (lowerEdu.includes("d2")) return 2;
+      if (lowerEdu.includes("d1")) return 1;
+      if (
+        lowerEdu.includes("sma") ||
+        lowerEdu.includes("smk") ||
+        lowerEdu.includes("senior high") ||
+        lowerEdu.includes("high school")
+      )
+        return 0.5;
+      return 0; // Default for unrecognized or missing education
+    }
+
+    // Add calculated values (total months experience, education rank) to each candidate
+    processedCandidates.forEach((candidate) => {
+      candidate.totalMonthsExperience = parseExperienceToMonths(
+        candidate.totalPengalamanKerja
+      );
+      candidate.educationRank = getEducationRank(candidate.pendidikanTerakhir);
+    });
+
+    // Sort candidates based on priority: 1. Experience (desc), 2. Education (desc)
+    // Filter out candidates with 0 experience before sorting
+    const validCandidates = processedCandidates.filter(
+      (candidate) => candidate.totalMonthsExperience > 0
+    );
+
+    // Sort remaining candidates by experience and education
+    validCandidates.sort((a, b) => {
+      // Priority 1: Experience (higher first)
+      if (b.totalMonthsExperience !== a.totalMonthsExperience) {
+        return b.totalMonthsExperience - a.totalMonthsExperience;
+      }
+      // Priority 2: Education (higher rank first) if experience is the same
+      return b.educationRank - a.educationRank;
+    });
+
+    // Replace the original array with filtered and sorted candidates
+    processedCandidates = validCandidates;
+
+    // --- Filter to keep only candidates matching the highest priority level ---
+    let finalCandidates = [];
+    if (processedCandidates.length > 0) {
+      // Get the experience level of the top candidate (highest experience)
+      const highestExperienceLevel =
+        processedCandidates[0].totalMonthsExperience;
+
+      // Filter the list to include only candidates with that same highest experience level
+      finalCandidates = processedCandidates.filter(
+        (candidate) =>
+          candidate.totalMonthsExperience === highestExperienceLevel
+      );
+      // Candidates within this final list are already sorted by education due to the initial sort
+    }
+    // --- End Filter ---
+
+    // --- Return consolidated and SORTED results ---
+    const remainingUploaded = await prisma.screeningcv.count({
+      where: { status: "cleaned" },
+    });
+
+    const formatResults = {
+      // Return the FILTERED and sorted list
+      sortedCandidates: finalCandidates.map((c) => ({
+        // Use finalCandidates here
+        nama_file: c.nama_file,
+        url_cv: c.url_cv,
+        namaLengkap: c.namaLengkap,
+        totalPengalamanKerja: c.totalPengalamanKerja, // Original string for display
+        pendidikanTerakhir: c.pendidikanTerakhir, // Original string for display
+        lokasiDomisili: c.lokasiDomisili,
+        // Optionally include the full extracted details if needed by the frontend
+        extractedDetails: c.extractedDetails,
+      })),
+      processingSummary: processedCandidates, // Summary of processing status for each file (processed/filtered_out/error)
+      remainingUploadedCount: remainingUploaded,
+    };
+
+    const priorityDatas = await prisma.prioritycv.create({
+      data: {
+        tanggal: moment().format("DD-MM-YYYY"),
+        response: formatResults,
+      },
+    });
 
     // --- Step 4 (Renumbered): Return the transformed array ---
     return res.json(result_array); // Return the array
