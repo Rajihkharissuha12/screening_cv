@@ -7,9 +7,8 @@ const showController = require("../controllers/showController"); // Adjust path 
 // Route to get the grouped screening history
 router.get("/history/date", showController.getScreeningHistory);
 router.get("/history", showController.getPriorityDates);
+router.get("/history/bydate", showController.getScreeningHistoryByDate);
+router.get("/history/byname", showController.getScreeningHistoryByName);
 // --- End add new route ---
-
-// Add other routes for 'show' functionality below if needed
-// Example: router.get('/:id', showController.getScreeningById);
 
 module.exports = router;

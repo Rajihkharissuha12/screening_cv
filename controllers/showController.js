@@ -171,8 +171,6 @@ exports.getScreeningHistory = async (req, res) => {
       },
     };
 
-    // --- New Step: Filter processingSummary to remove duplicates from sortedCandidates ---
-    // Create a Set of url_cv values from sortedCandidates for efficient lookup
     // Create a Set of URLs from sortedCandidates for efficient lookup
     const sortedCandidateUrls = new Set(
       formatResults.data.sortedCandidates
@@ -229,4 +227,58 @@ exports.getPriorityDates = async (req, res) => {
 };
 // --- End new function ---
 
-// Other controller functions...
+exports.getScreeningHistoryByDate = async (req, res) => {
+  const { startDate, endDate } = req.query; // Get the date range from URL parameters
+  try {
+    // Validate date range inputs
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        message: "Both start date and end date are required",
+      });
+    }
+
+    // Format dates to match Prisma's expected format (YYYY-MM-DD)
+    // Parse dates using moment with explicit format
+    const start = moment(startDate, "DD-MM-YYYY").format("DD-MM-YYYY");
+    const end = moment(endDate, "DD-MM-YYYY").format("DD-MM-YYYY");
+
+    const distinctDatesData = await prisma.prioritycv.findMany({
+      where: {
+        tanggal: {
+          gte: start,
+          lte: end,
+        },
+      },
+      distinct: ["tanggal"],
+      select: {
+        tanggal: true,
+      },
+      orderBy: {
+        tanggal: "asc", // or "desc" if you want descending order
+      },
+    });
+
+    // Return the list of dates
+    return res.json(distinctDatesData);
+  } catch (error) {
+    console.error("Error fetching screening history by date:", error);
+  }
+};
+
+exports.getScreeningHistoryByName = async (req, res) => {
+  const { name } = req.query; // Get the name from URL parameters
+  try {
+    const screeningHistory = await prisma.screeningcv.findMany({
+      where: {
+        response: {
+          path: ["namaLengkap"],
+          mode: "insensitive", // Make the search case-insensitive
+          string_contains: name, // Handle empty input gracefully
+        },
+      },
+    });
+    return res.json(screeningHistory);
+  } catch (error) {
+    console.error("Error fetching screening history by name:", error);
+  }
+};

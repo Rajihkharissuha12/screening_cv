@@ -284,12 +284,7 @@ exports.handleScreeningCV = async (req, res) => {
           data: {
             status: "filtered_out",
             tanggal_screening: moment().format("YYYY-MM-DD"),
-            response: {
-              info: `Filtered by AI criteria or invalid/empty JSON response. Criteria: Exp >= ${
-                minExperienceRequired || "N/A"
-              }, Domicile = ${desiredDomicile || "N/A"}`,
-              rawResponse: rawExtractedText, // Store raw response for debugging
-            },
+            response: extractedData,
           },
           where: { id: file.id },
         });
